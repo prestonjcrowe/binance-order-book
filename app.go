@@ -2,56 +2,48 @@ package main
 
 import(
   ws "github.com/gorilla/websocket"
-  coinbasepro "github.com/preichenberger/go-coinbasepro"
-  //"github.com/shopspring/decimal"
+  "fmt"
+  "net/http"
+  "encoding/json"
 
-  "log"
+  . "github.com/prestonjcrowe/coinbase-bot/orderbook"
 )
 
+func GetDepthSnapshot(symbol string) BinanceSnapshot {
+    base := "https://www.binance.com/api/v1/depth?symbol=%s&limit=1000"
+    url := fmt.Sprintf(base, symbol)
+    var target BinanceSnapshot
+    resp, err := http.Get(url)
+    if (err != nil) {
+        panic("error retrieving snapshot");
+    }
+    defer resp.Body.Close()
+
+    json.NewDecoder(resp.Body).Decode(&target)
+    return target
+}
+
 func main() {
-  var wsDialer ws.Dialer
-  wsConn, _, err := wsDialer.Dial("wss://ws-feed.pro.coinbase.com", nil)
-  if err != nil {
-    println(err.Error())
-  }
+    var wsDialer ws.Dialer
+    var ob OrderBook
+    var url string = "wss://stream.binance.com:9443/ws/btcusdt@depth"
 
-  subscribe := coinbasepro.Message{
-    Type:      "subscribe",
-    Channels: []coinbasepro.MessageChannel{
-      coinbasepro.MessageChannel{
-        Name: "heartbeat",
-        ProductIds: []string{
-          "BTC-USD",
-        },
-      },
-      coinbasepro.MessageChannel{
-        Name: "level2",
-        ProductIds: []string{
-          "BTC-USD",
-        },
-      },
-    },
-  }
-  if err := wsConn.WriteJSON(subscribe); err != nil {
-    println(err.Error())
-  }
+    ob.Init()
+    snapshot := GetDepthSnapshot("BTCUSDT")
+    fmt.Printf("Snapshot size: %d\n", len(snapshot.Bids))
 
-  for true {
-    /*_, message, err := wsConn.ReadMessage()
+    wsConn, _, err := wsDialer.Dial(url, nil)
     if err != nil {
         println(err.Error())
     }
-    log.Printf(": %s\n", message)*/
 
-    message := coinbasepro.Message{}
-    if err := wsConn.ReadJSON(&message); err != nil {
-      println(err.Error())
-      break
+    for true {
+        var msg BinanceDepth
+        if err := wsConn.ReadJSON(&msg); err != nil {
+            println(err.Error())
+            break
+        }
+        msg.Print()
+        ob.Update(msg)
     }
-
-    changes := message.Changes
-    for _, change := range changes {
-        log.Printf(": %s | %s | %s\n", change.Price, change.Size, change.Side)
-    }
-  }
 }
