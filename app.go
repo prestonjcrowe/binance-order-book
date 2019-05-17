@@ -9,7 +9,7 @@ import(
   . "github.com/prestonjcrowe/coinbase-bot/orderbook"
 )
 
-func GetDepthSnapshot(symbol string) BinanceSnapshot {
+func GetDepthSnapshot(symbol string, ob *OrderBook) BinanceSnapshot {
     base := "https://www.binance.com/api/v1/depth?symbol=%s&limit=1000"
     url := fmt.Sprintf(base, symbol)
     var target BinanceSnapshot
@@ -20,19 +20,15 @@ func GetDepthSnapshot(symbol string) BinanceSnapshot {
     defer resp.Body.Close()
 
     json.NewDecoder(resp.Body).Decode(&target)
+    msg := BinanceDepth { Bids: target.Bids, Asks: target.Asks, FinalID: target.FinalID }
+    ob.Update(msg)
     return target
 }
 
-func main() {
+func listenForOrders(url string, c chan BinanceDepth) {
     var wsDialer ws.Dialer
-    var ob OrderBook
-    var url string = "wss://stream.binance.com:9443/ws/btcusdt@depth"
-
-    ob.Init()
-    snapshot := GetDepthSnapshot("BTCUSDT")
-    fmt.Printf("Snapshot size: %d\n", len(snapshot.Bids))
-
     wsConn, _, err := wsDialer.Dial(url, nil)
+    var lastUpdatedID int
     if err != nil {
         println(err.Error())
     }
@@ -43,7 +39,29 @@ func main() {
             println(err.Error())
             break
         }
-        msg.Print()
+        c <- msg
+        if (lastUpdatedID != 0 && lastUpdatedID + 1 != msg.FirstID) {
+            panic("MISSED AN UPDATE")
+        }
+        lastUpdatedID = msg.FinalID
+    }
+}
+
+func main() {
+    // start listening for events in a go routine -> chan
+    // after that, get the snapshot, then start consuming from chan
+    // snapshot should return lastUpdateId
+    var ob OrderBook
+    var url string = "wss://stream.binance.com:9443/ws/btcusdt@depth"
+    msgChan := make(chan BinanceDepth)
+
+    go listenForOrders(url, msgChan)
+
+    GetDepthSnapshot("BTCUSDT", &ob)
+    for true  {
+        //ob.Asks.Print()
+        msg := <-msgChan
         ob.Update(msg)
+        fmt.Printf("Ask price: %s\n", ob.GetAsking().String())
     }
 }
