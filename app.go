@@ -6,7 +6,8 @@ import(
   "net/http"
   "encoding/json"
 
-  . "github.com/prestonjcrowe/coinbase-bot/orderbook"
+  . "github.com/prestonjcrowe/binance-bot/orderbook"
+  . "github.com/prestonjcrowe/binance-bot/bollinger"
 )
 
 func GetDepthSnapshot(symbol string, ob *OrderBook) BinanceSnapshot {
@@ -51,17 +52,25 @@ func main() {
     // start listening for events in a go routine -> chan
     // after that, get the snapshot, then start consuming from chan
     // snapshot should return lastUpdateId
+    var cw CandleWindow
+    klineHistory := GetKLineHistory("BTCUSDT", "1m")
+
+    for _, c := range klineHistory {
+      cw.Add(c)
+      bb := GetBollingerBands(cw, 20)
+      bb.Print()
+    }
+    /*
     var ob OrderBook
     var url string = "wss://stream.binance.com:9443/ws/btcusdt@depth"
     msgChan := make(chan BinanceDepth)
 
     go listenForOrders(url, msgChan)
-
     GetDepthSnapshot("BTCUSDT", &ob)
     for true  {
         //ob.Asks.Print()
         msg := <-msgChan
         ob.Update(msg)
         fmt.Printf("Ask price: %s\n", ob.GetAsking().String())
-    }
+    }*/
 }
